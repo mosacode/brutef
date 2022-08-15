@@ -5,10 +5,12 @@
 #include <curand_kernel.h>
 #include <device_functions.h>
 #include <bits/stdc++.h>
+#include <string>
 
 std::string wldir;
 std::vector<std::string> wlists;
 std::vector<std::string> hashes;
+std::vector<std::string> hashlists;
 std::vector<cuuint32_t> hashval;
 cuuint32_t* hashes_device;
 cuuint32_t* hashes_device_size;
@@ -25,6 +27,30 @@ std::vector<cuuint32_t> wordlisthostind;
 bool isw = false;
 cudaError_t cudastatus;
 cudaDeviceProp prp;
+
+void parsehashlists() {
+	for (auto x : hashlists) {
+		std::ifstream f; f.open(x);
+		if (!f.is_open()) {
+			std::cout << "couldnt open file \"" << x << "\" . skipping\n"; continue;
+		}
+		std::string command;
+		while (f >> command) {
+			if (command.size() != 32) {
+				std::cout << "invalid hash " << command << '\n';
+				continue;
+			}
+			for (int j2 = 0; j2 < command.size(); j2++) {
+				if (command[j2] >= 'A' && command[j2] <= 'Z') command[j2] |= 32;
+				if (!((command[j2] >= '0' && command[j2] <= '9') || (command[j2] >= 'a' && command[j2] <= 'f'))){
+					std::cout << "invalid hash " << command << '\n';
+					continue;
+				}
+			}
+			hashes.push_back(command);
+		}
+	}
+}
 
 bool commandparse(int argc, char* argv[]) {
 	for (int i = 1; i < argc; i++) {
@@ -47,6 +73,15 @@ bool commandparse(int argc, char* argv[]) {
 					return std::cout << "invalid hash " << command << " at " << i << "th command" << '\n', 0;
 			}
 			hashes.push_back(command);
+		}
+		else if (command == "hashlist") {
+			if (j + 1ll >= commandline.size() || commandline[j] != '=')
+				return std::cout << "invalid usage of command -hashlist\nusage: -hashlist=X where X is a file\n", 0;
+			j++; command.clear();
+			for (; j < commandline.size(); j++)
+				command.push_back(commandline[j]);
+			hashlists.push_back(command);
+			parsehashlists(); hashlists.clear();
 		}
 		/*else if (command == "wldir") {
 			if (j + 1ll >= commandline.size() || commandline[j] != '=')
@@ -99,6 +134,7 @@ void copydatatogmem() {
 
 int main(int argc, char* argv[]) {
 	cudastatus = cudaSetDevice(0);
+
 	if (cudastatus) return std::cerr << "no cuda device found!\n", 0;
 	cudaGetDeviceProperties(&prp, 0);
 	{cuuint32_t tmp = prp.maxThreadsPerBlock; cudaMalloc(&workingth, 4); cudaMemcpy(workingth, &tmp, 4, cudaMemcpyHostToDevice); }
@@ -140,9 +176,9 @@ int main(int argc, char* argv[]) {
 			cudastatus = cudaDeviceSynchronize();
 			cleangmem();
 			if (cudastatus) {
-				return std::cout << "cuda error on cudadevicesynchorize\n" << cudaGetErrorString(cudastatus) << '\n' << cudaGetErrorName(cudastatus), 0;
 				cudaFree(hashes_device);
 				cudaFree(hashes_device_size);
+				return std::cout << "cuda error on cudadevicesynchorize\n" << cudaGetErrorString(cudastatus) << '\n' << cudaGetErrorName(cudastatus), 0;
 			}
 			copydatatogmem();
 		}
@@ -151,13 +187,11 @@ int main(int argc, char* argv[]) {
 	}
 	cudastatus = cudaDeviceSynchronize();
 	cleangmem();
-	if (cudastatus) {
-		cudaFree(hashes_device);
-		cudaFree(hashes_device_size);
-		return std::cout << "cuda error on cudadevicesynchorize\n" << cudaGetErrorString(cudastatus) << '\n' << cudaGetErrorName(cudastatus), 0;
-	}
 	cudaFree(hashes_device);
 	cudaFree(hashes_device_size);
+	if (cudastatus) {
+		return std::cout << "cuda error on cudadevicesynchorize\n" << cudaGetErrorString(cudastatus) << '\n' << cudaGetErrorName(cudastatus), 0;
+	}
 	ansh.resize(anssz*33);
 	cudaMemcpy((char*)ansh.data(), ans, anssz * 33, cudaMemcpyDeviceToHost);
 	for (int i = 0; i < anssz; i++) {
